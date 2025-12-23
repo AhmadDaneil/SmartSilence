@@ -1,7 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:smartsilence_contextual_quiet_mode/services/database_helper.dart';
 
-class ContextManager extends StatelessWidget {
+class ContextManager extends StatefulWidget {
   const ContextManager({super.key});
+
+  @override
+  State<ContextManager> createState() => _ContextManagerState();
+}
+
+class _ContextManagerState extends State<ContextManager> {
+
+  // LOGIC: Add a dummy place to DB (Simulating a Map pick)
+  void _addMockPlace() async {
+    await DatabaseHelper().insertContext({
+      'name': 'New Location ${DateTime.now().second}',
+      'type': 'GEOFENCE',
+      'value': '3.0123, 101.500',
+      'radius': 50,
+      'is_active': 1
+    });
+    setState(() {}); // Refresh list
+  }
+
+  // LOGIC: Toggle active state in DB
+  void _toggleContext(int id, bool currentValue) async {
+    await DatabaseHelper().toggleContext(id, currentValue ? 0 : 1);
+    setState(() {}); // Refresh list
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -10,37 +35,36 @@ class ContextManager extends StatelessWidget {
         title: const Text("Context Manager")
       ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: (){}, 
+          onPressed: _addMockPlace, 
           icon : const Icon(Icons.add_location_alt),
-          label: const Text("Add Context"), 
+          label: const Text("Add Place"), 
           ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text("Saved Locations", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          _buildContextCard("University Library", "Radius: 50m", Icons.local_library, true),
-          _buildContextCard("Lecture Hall", "Radius: 30m", Icons.class_, false),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: DatabaseHelper().getAllContexts(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          
+          final contexts = snapshot.data!;
+          if (contexts.isEmpty) return const Center(child: Text("No contexts added yet."));
 
-          const Divider(height: 40,),
-
-          const Text("Saved Wi-Fi Networks", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          _buildContextCard("UiTM Wifi", "SSID Match", Icons.wifi, true),
-          _buildContextCard("MyHome Wifi", "SSID Match", Icons.home, false),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildContextCard(String title, String subtitle, IconData icon, bool isActive) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: CircleAvatar(child: Icon(icon)),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: Switch(value: isActive, onChanged: (val) {}),
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: contexts.length,
+            itemBuilder: (context, index) {
+              final item = contexts[index];
+              return Card(
+              child: ListTile(
+              leading: CircleAvatar(child: Icon(item['type'] == 'GEOFENCE' ? Icons.place : Icons.wifi),
+              ),
+              title: Text(item['name']),
+              subtitle: Text(item['value']),
+              trailing: Switch(value: item['is_active'] == 1, onChanged: (val) => _toggleContext(item['id'], item['is_active'] == 1),
+              ),
+              ),
+            );
+            }
+          );
+        }
       ),
     );
   }
