@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:smartsilence_contextual_quiet_mode/services/database_helper.dart';
+
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -10,6 +12,27 @@ class Home extends StatefulWidget {
 class _HomeState extends State<Home> {
   bool isMasterSwitchOn = true;
   bool isSilentModeActive = false;
+  String predictionText = "Analyzing patterns...";
+
+  @override
+  void initState(){
+    super.initState();
+    _loadPrediction();
+  }
+
+  void _loadPrediction() async{
+    final logs = await DatabaseHelper().getRecentLogs();
+    if (logs.isNotEmpty) {
+      setState(() {
+        predictionText = "Prediction: Based on your recent activity, you might need silent around ${DateTime.fromMillisecondsSinceEpoch(logs.first['timestamp']).hour}:00.";
+      });
+    } else {
+      setState(() {
+        predictionText = "No data yet. Use the app for a few days to see predictions.";
+      });
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +57,7 @@ class _HomeState extends State<Home> {
                     onChanged: (val){
                       setState(() {
                         isMasterSwitchOn = val;
+                        print("Background Service Enabled: $val");
                       });
                     },
                   ),
@@ -87,12 +111,12 @@ class _HomeState extends State<Home> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.purple),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
                       Icon(Icons.auto_awesome, color: Colors.purple),
                       SizedBox(width: 10),
                       Expanded(
-                        child: Text("Prediction: You usually silence phone at 2:00 PM to today (Lecture Hall)."),
+                        child: Text(predictionText),
                       ),
                     ],
                   ),
