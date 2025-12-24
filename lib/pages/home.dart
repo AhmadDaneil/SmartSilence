@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smartsilence_contextual_quiet_mode/services/database_helper.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 
 
 class Home extends StatefulWidget {
@@ -54,7 +55,13 @@ class _HomeState extends State<Home> {
                     style: TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(isMasterSwitchOn ? "Running in background" : "Service paused"),
                     value: isMasterSwitchOn,
-                    onChanged: (val){
+                    onChanged: (val) async{
+                      final service = FlutterBackgroundService();
+                      if (val) {
+                        await service.startService();
+                      } else {
+                        service.invoke("stopService");
+                      }
                       setState(() {
                         isMasterSwitchOn = val;
                         print("Background Service Enabled: $val");
