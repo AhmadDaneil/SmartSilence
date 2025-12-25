@@ -4,8 +4,18 @@ import 'package:smartsilence_contextual_quiet_mode/pages/context_manager.dart';
 import 'package:smartsilence_contextual_quiet_mode/pages/home.dart';
 import 'package:smartsilence_contextual_quiet_mode/pages/smart_insight.dart';
 import 'package:smartsilence_contextual_quiet_mode/pages/settings.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:smartsilence_contextual_quiet_mode/services/background_service.dart';
 
-void main() {
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Permission.notification.request();
+  await Permission.locationAlways.request();
+  await Permission.accessNotificationPolicy.request();
+
+  await initializeService();
+
   runApp(const MyApp());
 }
 
