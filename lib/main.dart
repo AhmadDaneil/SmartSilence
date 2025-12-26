@@ -3,7 +3,6 @@ import 'package:smartsilence_contextual_quiet_mode/pages/activity.dart';
 import 'package:smartsilence_contextual_quiet_mode/pages/context_manager.dart';
 import 'package:smartsilence_contextual_quiet_mode/pages/home.dart';
 import 'package:smartsilence_contextual_quiet_mode/pages/smart_insight.dart';
-import 'package:smartsilence_contextual_quiet_mode/pages/settings.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:smartsilence_contextual_quiet_mode/services/background_service.dart';
 
@@ -27,36 +26,67 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'SmartSilence',
       theme: ThemeData(
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MainNavigationWrapper(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-  final String title;
+class MainNavigationWrapper extends StatefulWidget {
+  const MainNavigationWrapper({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<MainNavigationWrapper> createState() => _MainNavigationWrapperState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
+  int _currentIndex = 0;
+
+  final List<Widget> _pages = [
+    const Home(),
+    const ContextManager(),
+    const SmartInsight(),
+    const Activity(),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'SmartSilence',
-      debugShowCheckedModeBanner: false,
-      initialRoute: '/home',
-      routes: {
-        '/home': (context) => const Home(),
-        '/context_manager': (context) => const ContextManager(),
-        '/smart_insight': (context) => const SmartInsight(),
-        '/activity': (context) => const Activity(),
-        '/settings': (context) => const Settings(),
-      }
+    return Scaffold(
+
+      body: _pages[_currentIndex],
+
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (int index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.map_outlined),
+            selectedIcon: Icon(Icons.map),
+            label: 'Contexts',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.insights),
+            selectedIcon: Icon(Icons.insights),
+            label: 'Insights',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'Activity Logs',
+          ),
+        ],
+        ),
     );
 
   }
