@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:ui';
-import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
@@ -44,8 +43,27 @@ Future<void> initializeService() async {
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
-  // Periodically check location (Every 15 seconds)
-  Timer.periodic(const Duration(seconds: 15), (timer) async {
+  if (service is AndroidServiceInstance) {
+    service.on('setAsForeground').listen((event) {
+      service.setAsForegroundService();
+    });
+
+    service.on('setAsBackground').listen((event) {
+      service.setAsBackgroundService();
+    });
+  }
+
+  service.on('set_normal_mode').listen((event) async {
+  await SoundMode.setSoundMode(RingerModeStatus.normal);
+  print("Forcing Normal Mode...");
+  });
+
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
+
+  // Periodically check location (Every 2 seconds)
+  Timer.periodic(const Duration(seconds: 2), (timer) async {
     if (service is AndroidServiceInstance) {
       if (await service.isForegroundService()) {
         
@@ -87,34 +105,50 @@ void onStart(ServiceInstance service) async {
         }
 
         // 3. ACTUAL SYSTEM CONTROL (CHANGE RINGER)
-        RingerModeStatus status = await SoundMode.ringerModeStatus;
-        
         if (insideZone) {
-          // If we are inside a zone but phone is NOT silent, silence it!
-          if (status != RingerModeStatus.silent && status != RingerModeStatus.vibrate) {
-            
-            // ACTUALLY CHANGE PHONE SETTINGS
-            try {
-              await SoundMode.setSoundMode(RingerModeStatus.vibrate);
-              
-              // LOG IT
-              await db.logEvent("GEOFENCE ($activeZoneName)", "SILENT");
-              
-              // Update Notification
-              service.setForegroundNotificationInfo(
-                title: "SmartSilence Active",
-                content: "Silenced: Inside $activeZoneName",
-              );
-            } catch (e) {
-              print("Permission error: $e");
-            }
+          try{
+            await SoundMode.setSoundMode(RingerModeStatus.vibrate);
+
+            await db.logEvent("GEOFENCE ($activeZoneName)", "SILENT");
+
+            service.setForegroundNotificationInfo(
+              title: "SmartSilence Active", 
+              content: "Silenceed: Inside $activeZoneName"
+            );
+
+            service.invoke(
+              'update',
+              {
+                "is_silent": true,
+                "status_text": "Inside $activeZoneName",
+              },
+            );
+          } catch(e) {
+            print("Permission error: $e");
           }
         } else {
-          // If we left the zone, restore sound? (Optional logic)
-           service.setForegroundNotificationInfo(
+          try {
+             // A. Restore Sound (Normal Mode) - THIS WAS MISSING
+             await SoundMode.setSoundMode(RingerModeStatus.normal);
+
+             // B. Update Notification
+             service.setForegroundNotificationInfo(
                 title: "SmartSilence Active",
-                content: "Safe Zone. Scanning...",
-           );
+                content: "Safe Zone. Ringer ON.",
+             );
+
+             // C. UPDATE THE UI (Dashboard Page)
+             service.invoke(
+              'update',
+              {
+                "is_silent": false,
+                "status_text": "Safe Zone",
+              },
+            );
+
+          } catch (e) {
+            print("Error restoring sound: $e");
+          }
         }
       }
     }

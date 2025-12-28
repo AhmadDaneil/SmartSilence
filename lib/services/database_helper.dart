@@ -91,22 +91,33 @@ class DatabaseHelper {
     return await db.query(tableContexts);
   }
 
+  // 1. To Delete
+  Future<void> deleteContext(int id) async {
+  final db = await database;
+  await db.delete(
+    'contexts', // Make sure this matches your table name
+    where: 'id = ?',
+    whereArgs: [id],
+  );
+}
+
+// 2. To Rename
+Future<void> updateContextName(int id, String newName) async {
+  final db = await database;
+  await db.update(
+    'contexts',
+    {'name': newName},
+    where: 'id = ?',
+    whereArgs: [id],
+  );
+}
+
   // Toggle a context on/off
   Future<int> toggleContext(int id, int isActive) async {
     Database db = await database;
     return await db.update(
       tableContexts,
       {colIsActive: isActive},
-      where: '$colId = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // Delete a context
-  Future<int> deleteContext(int id) async {
-    Database db = await database;
-    return await db.delete(
-      tableContexts,
       where: '$colId = ?',
       whereArgs: [id],
     );
