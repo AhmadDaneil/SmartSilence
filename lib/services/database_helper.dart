@@ -91,6 +91,12 @@ class DatabaseHelper {
     return await db.query(tableContexts);
   }
 
+  // Add this inside class DatabaseHelper
+    Future<void> clearAllLogs() async {
+   final db = await database;
+    await db.delete('activity_logs');
+  }
+
   // 1. To Delete
   Future<void> deleteContext(int id) async {
   final db = await database;

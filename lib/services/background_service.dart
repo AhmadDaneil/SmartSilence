@@ -62,8 +62,8 @@ void onStart(ServiceInstance service) async {
     service.stopSelf();
   });
 
-  // Periodically check location (Every 2 seconds)
-  Timer.periodic(const Duration(seconds: 2), (timer) async {
+  // Periodically check location (Every 10 seconds)
+  Timer.periodic(const Duration(seconds: 10), (timer) async {
     if (service is AndroidServiceInstance) {
       if (await service.isForegroundService()) {
         
