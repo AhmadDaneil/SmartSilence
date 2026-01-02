@@ -2,7 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
 class DatabaseHelper {
-  // Singleton pattern to ensure only one instance of the database exists
+  // Singleton pattern
   static final DatabaseHelper _instance = DatabaseHelper._internal();
   static Database? _database;
 
@@ -14,25 +14,28 @@ class DatabaseHelper {
 
   // Database Info
   static const _dbName = 'smartsilence.db';
-  static const _dbVersion = 1;
+  
+  // --- STEP 1: INCREMENT VERSION ---
+  static const _dbVersion = 2; // Changed from 1 to 2 to trigger migration
 
   // Table Names
   static const tableContexts = 'contexts';
   static const tableLogs = 'activity_logs';
+  static const tableSchedules = 'schedules'; // New table
 
-  // Column Names (Contexts Table)
+  // Column Names (Contexts)
   static const colId = 'id';
   static const colName = 'name';
-  static const colType = 'type'; // 'GEOFENCE' or 'WIFI'
-  static const colValue = 'value'; // Lat/Long string or SSID name
-  static const colRadius = 'radius'; // For Geofence only
-  static const colIsActive = 'is_active'; // 1 = true, 0 = false
+  static const colType = 'type'; 
+  static const colValue = 'value'; 
+  static const colRadius = 'radius'; 
+  static const colIsActive = 'is_active'; 
 
-  // Column Names (Logs Table)
+  // Column Names (Logs)
   static const colLogId = 'log_id';
-  static const colTimestamp = 'timestamp'; // Unix timestamp
-  static const colTrigger = 'trigger_source'; // 'MANUAL', 'GEOFENCE', 'WIFI'
-  static const colAction = 'action_taken'; // 'SILENT', 'RINGER'
+  static const colTimestamp = 'timestamp'; 
+  static const colTrigger = 'trigger_source'; 
+  static const colAction = 'action_taken'; 
 
   // Initialize Database
   Future<Database> get database async {
@@ -47,11 +50,14 @@ class DatabaseHelper {
       path,
       version: _dbVersion,
       onCreate: _onCreate,
+      // --- STEP 2: ADD MIGRATION LOGIC HERE ---
+      onUpgrade: _onUpgrade, 
     );
   }
 
+  // Handle new database creation (First time install)
   Future<void> _onCreate(Database db, int version) async {
-    // 1. Create Contexts Table (For Feature 1: Context Awareness)
+    // 1. Create Contexts Table
     await db.execute('''
       CREATE TABLE $tableContexts (
         $colId INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,8 +69,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. Create Logs Table (For Feature 3: Forecasting)
-    // We log every silence event to analyze patterns later
+    // 2. Create Logs Table
     await db.execute('''
       CREATE TABLE $tableLogs (
         $colLogId INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,67 +78,75 @@ class DatabaseHelper {
         $colAction TEXT NOT NULL
       )
     ''');
+
+    // 3. Create Schedules Table (New)
+    await db.execute('''
+      CREATE TABLE $tableSchedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        day TEXT,
+        time TEXT,
+        is_active INTEGER DEFAULT 1
+      )
+    ''');
+  }
+
+  // --- STEP 3: HANDLE UPDATES FOR EXISTING USERS ---
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // If user has version 1, add the new 'schedules' table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $tableSchedules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          day TEXT,
+          time TEXT,
+          is_active INTEGER DEFAULT 1
+        )
+      ''');
+      print("MIGRATION: Database upgraded to version 2 (Schedules table created)");
+    }
   }
 
   // ---------------------------------------------------
-  // CRUD Operations for Contexts (Feature 1)
+  // CRUD Operations 
   // ---------------------------------------------------
 
-  // Create a new Context (Place or Wi-Fi)
+  // Create Context
   Future<int> insertContext(Map<String, dynamic> row) async {
     Database db = await database;
     return await db.insert(tableContexts, row);
   }
 
-  // Get all saved contexts to display on 'Places' page
+  // Get Contexts
   Future<List<Map<String, dynamic>>> getAllContexts() async {
     Database db = await database;
     return await db.query(tableContexts);
   }
 
-  // Add this inside class DatabaseHelper
-    Future<void> clearAllLogs() async {
-   final db = await database;
-    await db.delete('activity_logs');
+  // Clear Logs
+  Future<void> clearAllLogs() async {
+    final db = await database;
+    await db.delete(tableLogs);
   }
 
-  // 1. To Delete
+  // Delete Context
   Future<void> deleteContext(int id) async {
-  final db = await database;
-  await db.delete(
-    'contexts', // Make sure this matches your table name
-    where: 'id = ?',
-    whereArgs: [id],
-  );
-}
+    final db = await database;
+    await db.delete(tableContexts, where: '$colId = ?', whereArgs: [id]);
+  }
 
-// 2. To Rename
-Future<void> updateContextName(int id, String newName) async {
-  final db = await database;
-  await db.update(
-    'contexts',
-    {'name': newName},
-    where: 'id = ?',
-    whereArgs: [id],
-  );
-}
+  // Update Context Name
+  Future<void> updateContextName(int id, String newName) async {
+    final db = await database;
+    await db.update(tableContexts, {colName: newName}, where: '$colId = ?', whereArgs: [id]);
+  }
 
-  // Toggle a context on/off
+  // Toggle Context
   Future<int> toggleContext(int id, int isActive) async {
     Database db = await database;
-    return await db.update(
-      tableContexts,
-      {colIsActive: isActive},
-      where: '$colId = ?',
-      whereArgs: [id],
-    );
+    return await db.update(tableContexts, {colIsActive: isActive}, where: '$colId = ?', whereArgs: [id]);
   }
 
-  // ---------------------------------------------------
-  // Operations for Forecasting Logic (Feature 3)
-  // ---------------------------------------------------
-
-  // Log an event whenever the mode changes
+  // Log Event
   Future<int> logEvent(String trigger, String action) async {
     Database db = await database;
     Map<String, dynamic> row = {
@@ -144,10 +157,9 @@ Future<void> updateContextName(int id, String newName) async {
     return await db.insert(tableLogs, row);
   }
 
-  // Fetch logs for the past 7 days to analyze
+  // Get Recent Logs
   Future<List<Map<String, dynamic>>> getRecentLogs() async {
     Database db = await database;
-    // Calculate timestamp for 7 days ago
     int sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7)).millisecondsSinceEpoch;
     
     return await db.query(
@@ -157,19 +169,36 @@ Future<void> updateContextName(int id, String newName) async {
       orderBy: '$colTimestamp DESC',
     );
   }
-  
-  // Advanced: Get usage count by day of week (Monday=1, Sunday=7)
-  // This helps us generate the chart on the Insights Page
+
+  // Get Silence Count By Day (Fixed Query)
   Future<List<Map<String, dynamic>>> getSilenceCountByDay() async {
-    Database db = await database;
-    // SQLite query to group by day. 
-    // Note: strftime('%w') returns 0-6 where 0 is Sunday.
-    // We select raw query for analytics.
+    final db = await database;
     return await db.rawQuery('''
-      SELECT strftime('%w', datetime($colTimestamp / 1000, 'unixepoch')) as day, count(*) as count 
-      FROM $tableLogs 
-      WHERE $colAction = 'SILENT' 
-      GROUP BY day
+      SELECT 
+        CASE CAST(strftime('%w', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER)
+          WHEN 0 THEN 'Sunday'
+          WHEN 1 THEN 'Monday'
+          WHEN 2 THEN 'Tuesday'
+          WHEN 3 THEN 'Wednesday'
+          WHEN 4 THEN 'Thursday'
+          WHEN 5 THEN 'Friday'
+          WHEN 6 THEN 'Saturday'
+        END as day_name,
+        COUNT(*) as silence_count
+      FROM $tableLogs
+      WHERE $colAction = 'SILENT'
+      GROUP BY day_name
     ''');
+  }
+
+  // Insert Schedule
+  Future<void> insertSchedule(String day, String time) async {
+    final db = await database;
+    await db.insert(
+      tableSchedules, 
+      {'day': day, 'time': time, 'is_active': 1},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    print("Schedule Automated: $day at $time");
   }
 }

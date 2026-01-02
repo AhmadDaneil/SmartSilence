@@ -9,27 +9,54 @@ class SmartInsight extends StatefulWidget {
 }
 
 class _SmartInsightState extends State<SmartInsight> {
-  // State to handle the "Ignore" button (hides the card)
+  // Control visibility of the recommendation card
   bool _isRecommendationVisible = true;
+
+  void _refreshData() {
+    setState(() {
+      _isRecommendationVisible = true; // Show card again on refresh if valid
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Intelligent Insights")),
+      appBar: AppBar(
+        title: const Text("Intelligent Insights"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+            tooltip: "Refresh Data",
+          )
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: FutureBuilder<List<Map<String, dynamic>>>(
           future: DatabaseHelper().getSilenceCountByDay(),
           builder: (context, snapshot) {
-            if (!snapshot.hasData) {
+            // --- LOADING STATE ---
+            if (snapshot.connectionState == ConnectionState.waiting) {
               return const SizedBox(
                   height: 200, child: Center(child: CircularProgressIndicator()));
             }
 
-            // 1. Process Data & Find the Peak Day
+            // --- EMPTY STATE ---
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 50.0),
+                  child: Text("No data available yet.\nKeep using the app!", 
+                    textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                ),
+              );
+            }
+
+            // --- PROCESS DATA ---
             final processedData = _processData(snapshot.data!);
             
-            // Find the day with the highest count
+            // Find Peak Day
             Map<String, dynamic> peakDayData = processedData[0];
             for (var d in processedData) {
               if (d['count'] > peakDayData['count']) {
@@ -37,13 +64,13 @@ class _SmartInsightState extends State<SmartInsight> {
               }
             }
             
-            String topDay = peakDayData['day']; // e.g., "Tue"
+            String topDay = peakDayData['day']; // e.g., "Mon"
             int topCount = peakDayData['count'];
 
-            // Map "Tue" -> "Tuesday" for better grammar
+            // Grammar Map
             Map<String, String> fullDayNames = {
-              "Mon": "Mondays", "Tue": "Tuesdays", "Wed": "Wednesdays",
-              "Thu": "Thursdays", "Fri": "Fridays", "Sat": "Saturdays", "Sun": "Sundays"
+              "Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday",
+              "Thu": "Thursday", "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"
             };
             String fullDayName = fullDayNames[topDay] ?? topDay;
 
@@ -54,17 +81,15 @@ class _SmartInsightState extends State<SmartInsight> {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 20),
 
-                // --- CHART SECTION ---
+                // --- CHART ---
                 SizedBox(
                   height: 200,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: processedData.map((dayData) {
-                      // Scale height (max 150)
                       int maxVal = (topCount == 0) ? 1 : topCount; 
                       double relativeHeight = (dayData['count'] / maxVal) * 150;
-                      
                       bool isPeak = dayData['day'] == topDay && topCount > 0;
                       
                       return _buildBar(
@@ -76,17 +101,18 @@ class _SmartInsightState extends State<SmartInsight> {
                     }).toList(),
                   ),
                 ),
-                // ---------------------
-
+                
                 const SizedBox(height: 30),
 
-                // Only show recommendation if we actually have data (count > 0)
+                // --- RECOMMENDATION CARD ---
+                // Only show if: 
+                // 1. User hasn't clicked Ignore/Automate (_isRecommendationVisible)
+                // 2. We actually have data (topCount > 0)
                 if (_isRecommendationVisible && topCount > 0) ...[
                   const Text("Smart Recommendations",
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
 
-                  // --- RECOMMENDATION CARD ---
                   Card(
                     color: Colors.indigo.shade50,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -99,7 +125,7 @@ class _SmartInsightState extends State<SmartInsight> {
                               const Icon(Icons.lightbulb, color: Colors.orange),
                               const SizedBox(width: 10),
                               Expanded(
-                                  child: Text("Pattern Detected: $fullDayName", // Dynamic Day
+                                  child: Text("Pattern Detected: $fullDayName", 
                                       style: const TextStyle(fontWeight: FontWeight.bold))),
                             ],
                           ),
@@ -110,40 +136,45 @@ class _SmartInsightState extends State<SmartInsight> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              // IGNORE BUTTON
+                              // --- IGNORE BUTTON ---
                               TextButton(
                                 onPressed: () {
+                                  // Hides the card
                                   setState(() {
                                     _isRecommendationVisible = false;
                                   });
                                 }, 
                                 child: const Text("Ignore")
                               ),
-                              
                               const SizedBox(width: 8),
 
-                              // AUTOMATE BUTTON
+                              // --- AUTOMATE BUTTON ---
                               ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.deepPurple,
                                   foregroundColor: Colors.white
                                 ),
-                                onPressed: () {
-                                  // 1. Show Feedback
+                                onPressed: () async {
+                                  // 1. Save to Database
+                                  // Defaulting to "2:00 PM" as per your example, 
+                                  // or you can make this more dynamic later.
+                                  await DatabaseHelper().insertSchedule(fullDayName, "14:00");
+
+                                  if(!context.mounted) return;
+
+                                  // 2. Show Success Message
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text("Auto-silence scheduled for every $fullDayName!"),
+                                      content: Text("Success! Auto-silence enabled for $fullDayName."),
                                       backgroundColor: Colors.green,
+                                      duration: const Duration(seconds: 2),
                                     )
                                   );
 
-                                  // 2. Hide the card (Action Complete)
+                                  // 3. Hide the card (Mark as done)
                                   setState(() {
                                     _isRecommendationVisible = false;
                                   });
-
-                                  // TODO: Insert into your Database here
-                                  // DatabaseHelper().insertSchedule(fullDayName, "14:00"); 
                                 }, 
                                 child: const Text("Automate")
                               ),
@@ -153,17 +184,6 @@ class _SmartInsightState extends State<SmartInsight> {
                       ),
                     ),
                   ),
-                ] else if (topCount == 0) ...[
-                   // Fallback when no data exists yet
-                   const Text("Smart Recommendations",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                   const SizedBox(height: 10),
-                   const Card(
-                     child: Padding(
-                       padding: EdgeInsets.all(16.0),
-                       child: Text("Use the app for a few days to see smart insights here!"),
-                     ),
-                   )
                 ]
               ],
             );
@@ -173,18 +193,17 @@ class _SmartInsightState extends State<SmartInsight> {
     );
   }
 
-  // --- HELPER METHODS ---
+  // --- HELPERS ---
 
   List<Map<String, dynamic>> _processData(List<Map<String, dynamic>> dbData) {
     Map<String, int> weekMap = {
       'Mon': 0, 'Tue': 0, 'Wed': 0, 'Thu': 0, 'Fri': 0, 'Sat': 0, 'Sun': 0
     };
-
     for (var row in dbData) {
-      String dayKey = row['day_name'].toString().substring(0, 3);
-      int count = row['silence_count'] ?? 0;
-      if (weekMap.containsKey(dayKey)) {
-        weekMap[dayKey] = count;
+      if (row['day_name'] != null) {
+        String dayKey = row['day_name'].toString().substring(0, 3);
+        int count = row['silence_count'] ?? 0;
+        if (weekMap.containsKey(dayKey)) weekMap[dayKey] = count;
       }
     }
     return weekMap.entries.map((e) => {'day': e.key, 'count': e.value}).toList();
