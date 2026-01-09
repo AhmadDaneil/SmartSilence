@@ -15,6 +15,7 @@ class _ContextManagerState extends State<ContextManager> {
   LatLng _selectedLocation = const LatLng(3.1390, 101.6869); // Default KL
   final MapController _mapController = MapController();
   List<Map<String, dynamic>> _savedContexts = [];
+  // ignore: unused_field
   bool _isLoading = true;
 
   @override

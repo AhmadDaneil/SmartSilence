@@ -16,7 +16,7 @@
     <application
         android:label="smartsilence_contextual_quiet_mode"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/launcher_icon">
 
         <!-- Flutter Local Notifications -->
         <receiver

@@ -38,7 +38,7 @@ dependencies:
   geolocator: ^11.0.0
   flutter_background_service: ^5.0.0
   flutter_local_notifications: ^17.2.2
-  sound_mode: ^3.0.0
+  sound_mode: ^3.1.1
   shared_preferences: ^2.2.0
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
@@ -48,6 +48,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   provider: ^6.1.5+1
   google_nav_bar: ^5.0.7
+  flutter_launcher_icons: ^0.13.1
 
 dev_dependencies:
   flutter_test:
@@ -101,3 +102,11 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/SmartSilence_Logo.png"
+  min_sdk_android: 21 # optional
+  adaptive_icon_background: "#ffffff" # optional: background color for Android adaptive icons
+  adaptive_icon_foreground: "assets/icon/SmartSilence_Logo.png"
