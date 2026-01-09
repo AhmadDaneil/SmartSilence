@@ -5,13 +5,13 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sound_mode/sound_mode.dart';
 import 'package:sound_mode/utils/ringer_mode_statuses.dart';
-import 'database_helper.dart';
+import 'database_helper.dart'; // Ensure this import points to your DB file
 
-// Entry point for the background service
+// Entry point
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
 
-  // Android Notification Setup (Required for foreground service)
+  // Create the notification channel (Required for Android)
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'my_foreground', 
     'SmartSilence Service', 
@@ -27,71 +27,63 @@ Future<void> initializeService() async {
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
-      autoStart: false, // We control this with the Master Switch
+      autoStart: false,
       isForegroundMode: true,
       notificationChannelId: 'my_foreground',
       initialNotificationTitle: 'SmartSilence Active',
-      initialNotificationContent: 'Monitoring location...',
+      initialNotificationContent: 'Initializing...',
       foregroundServiceNotificationId: 888,
     ),
-    iosConfiguration: IosConfiguration(), // iOS requires different setup, skipping for simple demo
+    iosConfiguration: IosConfiguration(),
   );
 }
 
-// THIS IS THE CODE THAT RUNS IN THE BACKGROUND
-// THIS IS THE CODE THAT RUNS IN THE BACKGROUND
+// BACKGROUND LOGIC
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
-  // --- STATE TRACKING VARIABLES ---
-  // We use these to remember the previous state.
-  // We only update the phone if the state CHANGES.
-  bool? isCurrentlySilent; 
+  // --- STATE MEMORY ---
+  // We keep track of the LAST known state to avoid spamming updates
+  bool? wasSilent; 
   String? lastZoneName; 
-  // --------------------------------
+  // --------------------
 
-  if (service is AndroidServiceInstance) {
-    service.on('setAsForeground').listen((event) {
-      service.setAsForegroundService();
-    });
+  // Listeners for stopping/backgrounding
+  service.on('stopService').listen((event) => service.stopSelf());
+  service.on('setAsForeground').listen((event) {
+     if (service is AndroidServiceInstance) service.setAsForegroundService();
+  });
+  service.on('setAsBackground').listen((event) {
+     if (service is AndroidServiceInstance) service.setAsBackgroundService();
+  });
 
-    service.on('setAsBackground').listen((event) {
-      service.setAsBackgroundService();
-    });
-  }
-
+  // Listener to force Normal Mode manually
   service.on('set_normal_mode').listen((event) async {
     await SoundMode.setSoundMode(RingerModeStatus.normal);
-    // Reset state so it can trigger again if needed
-    isCurrentlySilent = false; 
-    print("Forcing Normal Mode...");
+    wasSilent = false; 
   });
 
-  service.on('stopService').listen((event) {
-    service.stopSelf();
-  });
-
-  // Periodically check location (Every 10 seconds)
+  // --- THE LOCATION LOOP (Every 10 Seconds) ---
   Timer.periodic(const Duration(seconds: 10), (timer) async {
     if (service is AndroidServiceInstance) {
       if (await service.isForegroundService()) {
         
-        // 1. GET REAL LOCATION
+        // 1. Get Current Location
         Position? position;
         try {
           position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
         } catch (e) {
-          print("Error getting location: $e");
-          return;
+          print("GPS Error: $e");
+          return; 
         }
 
-        // 2. CHECK DATABASE FOR NEARBY ZONES
+        // 2. Check Database for Matches
         final db = DatabaseHelper();
         final contexts = await db.getAllContexts();
         
         bool insideZone = false;
-        String activeZoneName = "";
+        String activeZoneName = "Unknown"; // Placeholder
 
         for (var place in contexts) {
           if (place['is_active'] == 1 && place['type'] == 'GEOFENCE') {
@@ -100,76 +92,78 @@ void onStart(ServiceInstance service) async {
             double savedLong = double.parse(coords[1]);
             double radius = (place['radius'] as int).toDouble();
 
-            double distanceInMeters = Geolocator.distanceBetween(
+            double distance = Geolocator.distanceBetween(
               position.latitude, position.longitude, savedLat, savedLong
             );
 
-            if (distanceInMeters <= radius) {
+            if (distance <= radius) {
               insideZone = true;
-              activeZoneName = place['name'];
+              activeZoneName = place['name']; // <--- CAPTURE THE NAME HERE
               break; 
             }
           }
         }
 
-        // --- CRITICAL FIX: ONLY UPDATE IF STATE CHANGED ---
-        bool stateChanged = (insideZone != isCurrentlySilent) || (insideZone && activeZoneName != lastZoneName);
+        // 3. DECISION LOGIC
+        // We update IF: 
+        // A. We entered/exited a zone (insideZone changed)
+        // OR
+        // B. We are still inside a zone, but the name changed (Moved from Library -> Class)
+        
+        bool stateChanged = (insideZone != wasSilent) || (insideZone && activeZoneName != lastZoneName);
 
         if (stateChanged) {
-          print("State Changed! Updating System...");
-
-          // 3. ACTUAL SYSTEM CONTROL
           if (insideZone) {
-            // ENTERING A QUIET ZONE
+            // --- SCENARIO: ENTERING A ZONE ---
             try {
-              await SoundMode.setSoundMode(RingerModeStatus.vibrate); // or .silent
+              // 1. Silence Phone
+              await SoundMode.setSoundMode(RingerModeStatus.vibrate);
 
-              // Log only ONCE when entering
-              await db.logEvent("GEOFENCE ($activeZoneName)", "SILENCED");
-
+              // 2. Update System Notification (The Status Bar)
               service.setForegroundNotificationInfo(
                 title: "SmartSilence Active", 
-                content: "Silenced: Inside $activeZoneName"
+                content: "Silenced: Inside $activeZoneName" // <--- SHOW NAME HERE
               );
 
-              service.invoke(
-                'update',
-                {
-                  "is_silent": true,
-                  "status_text": "Inside $activeZoneName",
-                },
-              );
-            } catch(e) {
-              print("Permission error: $e");
-            }
+              // 3. Log to DB
+              await db.logEvent("ENTERED $activeZoneName", "SILENCED");
+
+              // 4. Update App UI
+              service.invoke('update', {
+                "is_silent": true,
+                "status_text": "Inside $activeZoneName"
+              });
+
+            } catch(e) { print("Error silencing: $e"); }
+
           } else {
-            // LEAVING A ZONE (RETURNING TO NORMAL)
+            // --- SCENARIO: LEAVING ZONE (SAFE) ---
             try {
+              // 1. Un-Silence Phone
               await SoundMode.setSoundMode(RingerModeStatus.normal);
-              
-              // Log only ONCE when exiting
-              await db.logEvent("GEOFENCE_EXIT", "NORMAL_MODE");
 
+              // 2. Update System Notification
               service.setForegroundNotificationInfo(
                 title: "SmartSilence Active",
-                content: "Safe Zone. Ringer ON.",
+                content: "Safe Zone. Ringer ON.", // <--- SHOW SAFE STATUS
               );
 
-              service.invoke(
-                'update',
-                {
-                  "is_silent": false,
-                  "status_text": "Safe Zone",
-                },
-              );
+              // 3. Log to DB
+              if (wasSilent == true) { // Only log if we were previously silent
+                 await db.logEvent("EXITED ZONE", "NORMAL_MODE");
+              }
 
-            } catch (e) {
-              print("Error restoring sound: $e");
-            }
+              // 4. Update App UI
+              service.invoke('update', {
+                "is_silent": false,
+                "status_text": "Safe Zone"
+              });
+
+            } catch (e) { print("Error restoring sound: $e"); }
           }
 
-          // Update State Trackers
-          isCurrentlySilent = insideZone;
+          // Update Memory
+          wasSilent = insideZone;
           lastZoneName = activeZoneName;
         }
       }
