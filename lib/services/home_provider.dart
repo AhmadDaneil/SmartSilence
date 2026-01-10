@@ -1,125 +1,67 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:sound_mode/sound_mode.dart'; // <--- NEW IMPORT
-import 'package:sound_mode/utils/ringer_mode_statuses.dart'; // <--- NEW IMPORT
-import '../services/database_helper.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 
 class HomeProvider with ChangeNotifier {
   bool _isServiceActive = false;
   String _statusMessage = "Service is Stopped";
-  String _currentLocationInfo = "Unknown Location";
+  String _currentLocationInfo = "Normal Mode";
 
   // Getters
   bool get isServiceActive => _isServiceActive;
   String get statusMessage => _statusMessage;
   String get currentLocationInfo => _currentLocationInfo;
 
-  // --- MAIN FUNCTION: TOGGLE BUTTON ---
-  void toggleService() {
-    _isServiceActive = !_isServiceActive;
-
-    if (_isServiceActive) {
-      _statusMessage = "Service Started...";
-      notifyListeners();
-
-      // 1. Scan Instantly
-      _scanAndCheckLocation();
-
-      // 2. Scan again in 10 seconds
-      Future.delayed(const Duration(seconds: 10), () {
-        // Only scan if user hasn't turned it off in the meantime
-        if (_isServiceActive) {
-          print("10 seconds passed. Re-scanning...");
-          _scanAndCheckLocation();
-        }
-      });
-
-    } else {
-      // User turned OFF the service -> Revert to Normal Mode
-      _stopService();
-    }
-  }
-  
-  void _stopService() async {
-     _statusMessage = "Service Stopped";
-     _currentLocationInfo = "Normal Mode Restored";
-     
-     // Set phone back to NORMAL when stopping
-     try {
-       await SoundMode.setSoundMode(RingerModeStatus.normal);
-     } catch (e) {
-       print("Error restoring sound: $e");
-     }
-     
-     notifyListeners();
+  HomeProvider() {
+    _init();
   }
 
-  // --- HELPER: THE SCANNING LOGIC ---
-  Future<void> _scanAndCheckLocation() async {
-    try {
-      _statusMessage = "Scanning Location...";
-      notifyListeners();
-
-      // A. Get Current Position
-      Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
-
-      // B. Fetch Saved Places from DB
-      final contexts = await DatabaseHelper().getAllContexts();
-      
-      bool matchFound = false;
-      String matchedPlaceName = "";
-
-      // C. Loop through saved places to find a match
-      for (var place in contexts) {
-        if (place['type'] == 'GEOFENCE' && place['is_active'] == 1) {
-          
-          List<String> coords = place['value'].split(',');
-          double savedLat = double.parse(coords[0]);
-          double savedLng = double.parse(coords[1]);
-          double radius = (place['radius'] ?? 100).toDouble();
-
-          double distanceInMeters = Geolocator.distanceBetween(
-            position.latitude,
-            position.longitude,
-            savedLat,
-            savedLng,
-          );
-
-          if (distanceInMeters <= radius) {
-            matchFound = true;
-            matchedPlaceName = place['name'];
-            break; // Stop looking, we found one
-          }
-        }
-      }
-
-      // --- LOGIC TO CHANGE PHONE SETTINGS ---
-      if (matchFound) {
-        _statusMessage = "Active: Inside $matchedPlaceName";
-        _currentLocationInfo = "Silent Mode ON";
-        
-        // 1. SILENCE THE PHONE
-        await SoundMode.setSoundMode(RingerModeStatus.silent); // Or .vibrate
-        
-        // 2. Log it
-        await DatabaseHelper().logEvent("GEOFENCE", "SILENCED_AT_$matchedPlaceName");
-
-      } else {
-        _statusMessage = "Active: Monitoring...";
-        _currentLocationInfo = "Outside known areas (Normal Mode)";
-
-        // 3. UNSILENCE THE PHONE (Back to Normal)
-        await SoundMode.setSoundMode(RingerModeStatus.normal);
-      }
-
-    } catch (e) {
-      _statusMessage = "Error: ${e.toString()}";
-      // Fallback
-      await SoundMode.setSoundMode(RingerModeStatus.normal);
-    }
+  void _init() async {
+    final service = FlutterBackgroundService();
     
+    // 1. Check if the service is already running when app opens
+    _isServiceActive = await service.isRunning();
+    if (_isServiceActive) {
+      _statusMessage = "Service Running";
+    }
+
+    // 2. Listen for updates FROM the background service
+    // This ensures the UI matches exactly what the background is doing
+    service.on('update').listen((event) {
+      if (event != null) {
+        // Update the UI text based on the Background Service's reality
+        _statusMessage = event['status_text'] ?? _statusMessage;
+        
+        // Optional: You can update current location info if your service sends it
+        if (event['is_silent'] == true) {
+          _currentLocationInfo = "Silent Mode Active";
+        } else {
+          _currentLocationInfo = "Safe Zone (Normal Mode)";
+        }
+        notifyListeners();
+      }
+    });
+  }
+
+  // --- TOGGLE BUTTON ACTION ---
+  void toggleService() async {
+    final service = FlutterBackgroundService();
+    
+    if (_isServiceActive) {
+      // --- TURN OFF ---
+      service.invoke("stopService"); // Tell Background Service to die
+      _isServiceActive = false;
+      _statusMessage = "Service Stopped";
+      _currentLocationInfo = "Normal Mode Restored";
+      print("🔕 Stopped Service");
+    } else {
+      // --- TURN ON ---
+      await service.startService(); // Tell Background Service to start
+      _isServiceActive = true;
+      _statusMessage = "Starting...";
+      _currentLocationInfo = "Initializing...";
+      print("🔔 Started Service");
+    }
+
     notifyListeners();
   }
 }
