@@ -71,7 +71,7 @@ class _ContextManagerState extends State<ContextManager> {
                     'type': 'GEOFENCE',
                     'value':
                         '${_selectedLocation.latitude},${_selectedLocation.longitude}',
-                    'radius': 100,
+                    'radius': 60,
                     'is_active': 1
                   });
                   if (mounted) {
